@@ -84,6 +84,16 @@
       '<div class="team away"><b>' + esc(m.away) + '</b><span>' + esc(m.awayRank || '') + '</span></div>' +
       '</div>' +
       grid9(m) +
+      '<div class="basis">' +
+      '<div class="basis-row"><span>近10场</span><b>' + (m.formHome ? m.formHome.w + '胜' + m.formHome.d + '平' + m.formHome.l + '负' : '—') +
+      '</b><span class="vs">主</span><b>' + (m.formAway ? m.formAway.w + '胜' + m.formAway.d + '平' + m.formAway.l + '负' : '—') + '</b><span class="vs">客</span></div>' +
+      '<div class="basis-row"><span>场均进/失</span><b>' + (m.formHome ? m.formHome.gf + '/' + m.formHome.ga : '—') +
+      '</b><span class="vs">主</span><b>' + (m.formAway ? m.formAway.gf + '/' + m.formAway.ga : '—') + '</b><span class="vs">客</span></div>' +
+      '<div class="basis-row"><span>交锋</span><b>' + (m.h2h && m.h2h.n ? m.h2h.hw + '-' + m.h2h.d + '-' + m.h2h.aw : '无记录') +
+      '</b><span class="vs">休息</span><b>' + (m.restHome === null ? '—' : m.restHome + '天') + ' / ' + (m.restAway === null ? '—' : m.restAway + '天') + '</b></div>' +
+      '<div class="basis-row"><span>ELO</span><b>' + (m.eloHome || '—') + '</b><span class="vs">vs</span><b>' + (m.eloAway || '—') +
+      '</b><span class="vs">λ</span><b>' + num(m.lambda.home, 2) + ' / ' + num(m.lambda.away, 2) + '</b></div>' +
+      '</div>' +
       '<div class="picks">' + (m.picks || []).map(function (p) {
         return '<div class="pick-row">' +
           '<span class="pick-name">' + esc(p.name) + '</span>' +
@@ -91,10 +101,10 @@
           '<span class="pick-odds">' + (p.odds ? num(p.odds, 2) : '—') + '</span>' +
           (p.edge !== undefined ? '<span class="pick-edge">模型期望 +' + pct(p.edge) + '</span>' : '') +
           '<span class="pick-conf conf-' + esc(p.conf) + '">' + esc(p.conf) + '</span>' +
-          '</div>';
+          '</div>' +
+          (p.reason ? '<div class="pick-reason">' + esc(p.reason) + '</div>' : '');
       }).join('') + '</div>' +
-      '<p class="hint" style="margin-top:8px">λ 主 ' + num(m.lambda.home, 2) + ' / 客 ' + num(m.lambda.away, 2) +
-      ' · ELO ' + (m.eloDiff >= 0 ? '+' : '') + m.eloDiff + ' · 小字为市场隐含概率</p>' +
+      '<p class="hint" style="margin-top:8px">小字为市场隐含概率；λ 是泊松模型的期望进球</p>' +
       '</div>';
   }
 

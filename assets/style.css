@@ -152,3 +152,9 @@ button { font: inherit; color: inherit; border: 0; background: none; cursor: poi
 .live-roi.up { color: var(--green); }
 .live-roi.down { color: var(--red); }
 .live-table .live-fam { display: none; }
+.basis { margin-top: 10px; padding: 9px 10px; border-radius: 12px; background: rgba(255,255,255,.035); display: grid; gap: 5px; }
+.basis-row { display: grid; grid-template-columns: 62px 1fr 22px 1fr 22px 1fr; align-items: center; gap: 4px; font-size: 11px; }
+.basis-row span { color: var(--dim); }
+.basis-row b { color: var(--text); font-weight: 500; font-variant-numeric: tabular-nums; }
+.basis-row .vs { color: var(--dim); font-size: 9.5px; text-align: center; }
+.pick-reason { font-size: 10px; color: var(--dim); padding: 0 8px 5px 80px; margin-top: -2px; }

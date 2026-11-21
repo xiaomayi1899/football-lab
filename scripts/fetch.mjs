@@ -31,7 +31,8 @@ const arg = (n, d) => {
   const h = args.find((a) => a.startsWith('--' + n + '='));
   return h ? Number(h.split('=')[1]) : d;
 };
-const DAYS = arg('days', 45);
+const DAYS = arg('days', 365);
+const ODDS_ONLY = args.includes('--odds-only');
 
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36';
 const BASE = 'https://webapi.sporttery.cn/gateway/uniform/football/';
@@ -90,41 +91,49 @@ function htftCode(ht, ft) {
 /* ---------------- 赛果 ---------------- */
 async function fetchResults() {
   const end = new Date();
-  const start = new Date(Date.now() - DAYS * 86400000);
+  const startAll = new Date(Date.now() - DAYS * 86400000);
   const out = [];
-  let page = 1, pages = 1;
-  do {
-    const v = await get('getUniformMatchResultV1.qry', {
-      matchBeginDate: ymd(start),
-      matchEndDate: ymd(end),
-      leagueId: '',
-      pageSize: 100,
-      pageNo: page,
-      isFix: 0,
-      matchPage: 1,
-      pcOrWap: 1
-    });
-    const list = v.matchResult || [];
-    for (const m of list) {
-      if (String(m.matchResultStatus) !== '2') continue;
-      const ht = scorePair(m.sectionsNo1);
-      const ft = scorePair(m.sectionsNo999);
-      if (!ht || !ft) continue;
-      out.push({
-        num: m.matchNumStr,
-        date: m.matchDate,
-        league: m.leagueNameAbbr || m.leagueName || '',
-        home: m.homeTeam,
-        away: m.awayTeam,
-        ht,
-        ft,
-        htft: htftCode(ht, ft),
-        result: ft[0] > ft[1] ? 'h' : ft[0] < ft[1] ? 'a' : 'd'
+  let cursor = new Date(startAll.getTime());
+  let chunk = 0;
+  while (cursor < end) {
+    const chunkEnd = new Date(Math.min(cursor.getTime() + 30 * 86400000, end.getTime()));
+    let page = 1, pages = 1;
+    do {
+      const v = await get('getUniformMatchResultV1.qry', {
+        matchBeginDate: ymd(cursor),
+        matchEndDate: ymd(chunkEnd),
+        leagueId: '',
+        pageSize: 100,
+        pageNo: page,
+        isFix: 0,
+        matchPage: 1,
+        pcOrWap: 1
       });
-    }
-    pages = Number(v.pages) || 1;
-    page++;
-  } while (page <= pages && page <= 20);
+      const list = v.matchResult || [];
+      for (const m of list) {
+        if (String(m.matchResultStatus) !== '2') continue;
+        const ht = scorePair(m.sectionsNo1);
+        const ft = scorePair(m.sectionsNo999);
+        if (!ht || !ft) continue;
+        out.push({
+          num: m.matchNumStr,
+          date: m.matchDate,
+          league: m.leagueNameAbbr || m.leagueName || '',
+          home: m.homeTeam,
+          away: m.awayTeam,
+          ht,
+          ft,
+          htft: htftCode(ht, ft),
+          result: ft[0] > ft[1] ? 'h' : ft[0] < ft[1] ? 'a' : 'd'
+        });
+      }
+      pages = Number(v.pages) || 1;
+      page++;
+    } while (page <= pages && page <= 40);
+    chunk++;
+    if (chunk % 2 === 0) console.log(`  ${ymd(cursor)} ~ ${ymd(chunkEnd)}：累计 ${out.length} 场`);
+    cursor = new Date(chunkEnd.getTime() + 86400000);
+  }
   return out;
 }
 
@@ -152,6 +161,8 @@ async function fetchOdds() {
         leagueAbb: m.leagueAbbName || '',
         home: m.homeTeamAllName || m.homeTeamAbbName,
         away: m.awayTeamAllName || m.awayTeamAbbName,
+        homeAbb: m.homeTeamAbbName || m.homeTeamAllName,
+        awayAbb: m.awayTeamAbbName || m.awayTeamAllName,
         homeRank: m.homeRank || '',
         awayRank: m.awayRank || '',
         status: m.matchStatus || '',
@@ -171,12 +182,15 @@ const oddsFile = resolve(DATA, 'odds.json');
 const existingResults = readJson(resultsFile, { updatedAt: null, matches: [] });
 const resultMap = new Map(existingResults.matches.map((m) => [m.num + '|' + m.date, m]));
 
-console.log(`抓取最近 ${DAYS} 天赛果…`);
-const fresh = await fetchResults();
-for (const m of fresh) resultMap.set(m.num + '|' + m.date, m);
-const allResults = [...resultMap.values()].sort((a, b) => (a.date + a.num).localeCompare(b.date + b.num));
-writeFileSync(resultsFile, JSON.stringify({ updatedAt: new Date().toISOString(), matches: allResults }), 'utf8');
-console.log(`赛果：本次 ${fresh.length} 场，累计 ${allResults.length} 场`);
+let allResults = [...resultMap.values()].sort((a, b) => (a.date + a.num).localeCompare(b.date + b.num));
+if (!ODDS_ONLY) {
+  console.log(`抓取最近 ${DAYS} 天赛果…`);
+  const fresh = await fetchResults();
+  for (const m of fresh) resultMap.set(m.num + '|' + m.date, m);
+  allResults = [...resultMap.values()].sort((a, b) => (a.date + a.num).localeCompare(b.date + b.num));
+  writeFileSync(resultsFile, JSON.stringify({ updatedAt: new Date().toISOString(), matches: allResults }), 'utf8');
+  console.log(`赛果：本次 ${fresh.length} 场，累计 ${allResults.length} 场`);
+}
 
 console.log('抓取在售半全场赔率…');
 const odds = await fetchOdds();

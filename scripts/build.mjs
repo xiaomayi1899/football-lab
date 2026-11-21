@@ -59,27 +59,62 @@ function priorFor(league) {
 }
 
 /* ---------- 逐场建上下文 ---------- */
+function rankOf(str) {
+  const m = String(str || '').match(/(\d+)/);
+  return m ? Number(m[1]) : null;
+}
+
 function buildContext(m) {
   const odds = m.hafu || {};
   if (!odds.hh) return null;
   const implied = C.implied(odds);
   const prior = priorFor(m.league);
-  const rates = C.teamRates(results, m.home, prior);
-  const ratesAway = C.teamRates(results, m.away, prior);
-  const lam = C.estimateLambda({
-    home: rates.home,
-    away: ratesAway.away
-  }, prior);
-  const model = C.htftProbs(lam.home, lam.away);
+  const date = m.date;
+
+  const homeKey = m.homeAbb || m.home;
+  const awayKey = m.awayAbb || m.away;
+  const rates = C.teamRates(results, homeKey, prior);
+  const ratesAway = C.teamRates(results, awayKey, prior);
+  const baseLam = C.estimateLambda({ home: rates.home, away: ratesAway.away }, prior);
+
+  const formHome = C.teamForm(results, homeKey, date, 10);
+  const formAway = C.teamForm(results, awayKey, date, 10);
+  const h2h = C.h2h(results, homeKey, awayKey, date);
+  const restHome = C.restDays(results, homeKey, date);
+  const restAway = C.restDays(results, awayKey, date);
+  const halfHome = C.halfRates(results, homeKey, date, 15);
+  const halfAway = C.halfRates(results, awayKey, date, 15);
+  const rh = rankOf(m.homeRank), ra = rankOf(m.awayRank);
+  const rankDiff = (rh !== null && ra !== null) ? (ra - rh) : null;
+
+  const lam = C.adjustLambda(baseLam, {
+    formHome, formAway, h2h, restHome, restAway, rankDiff, leagueAvg: prior
+  });
+  let model = C.htftProbs(lam.home, lam.away);
+
+  /* 市场校准：用胜平负赔率反推 λ，避免纯模型把强队高估到 3 球以上。
+     只校准 35%，保留模型的独立判断。 */
+  if (m.had && m.had.h && m.had.d && m.had.a) {
+    const ph = 1 / m.had.h, pd = 1 / m.had.d, pa = 1 / m.had.a;
+    const s = ph + pd + pa;
+    const target = { h: ph / s, d: pd / s, a: pa / s };
+    const cur = { h: 0, d: 0, a: 0 };
+    for (const k of C.HAFU) cur[k[1]] += model[k];
+    const nh = Math.pow(target.h / Math.max(0.05, cur.h), 0.35);
+    const na = Math.pow(target.a / Math.max(0.05, cur.a), 0.35);
+    lam.home = Math.max(0.7, Math.min(2.6, lam.home * nh));
+    lam.away = Math.max(0.5, Math.min(2.5, lam.away * na));
+    model = C.htftProbs(lam.home, lam.away);
+  }
+
   const eloNow = eloBefore[keyOf(m)] || { home: elo[m.home] || 1500, away: elo[m.away] || 1500 };
+
   return {
-    odds,
-    implied,
-    model,
-    lambda: lam,
+    odds, implied, model, lambda: lam,
     eloDiff: eloNow.home - eloNow.away,
     eloHome: eloNow.home,
-    eloAway: eloNow.away
+    eloAway: eloNow.away,
+    formHome, formAway, h2h, restHome, restAway, halfHome, halfAway, rankDiff
   };
 }
 
@@ -116,6 +151,13 @@ for (const snap of snapshots) {
       model: ctx.model,
       lambda: ctx.lambda,
       eloDiff: Math.round(ctx.eloDiff),
+      eloHome: Math.round(ctx.eloHome),
+      eloAway: Math.round(ctx.eloAway),
+      formHome: { n: ctx.formHome.n, w: ctx.formHome.w, d: ctx.formHome.d, l: ctx.formHome.l, pts: +ctx.formHome.pts.toFixed(2), home: ctx.formHome.home, gf: +ctx.formHome.avgGF.toFixed(2), ga: +ctx.formHome.avgGA.toFixed(2) },
+      formAway: { n: ctx.formAway.n, w: ctx.formAway.w, d: ctx.formAway.d, l: ctx.formAway.l, pts: +ctx.formAway.pts.toFixed(2), away: ctx.formAway.away, gf: +ctx.formAway.avgGF.toFixed(2), ga: +ctx.formAway.avgGA.toFixed(2) },
+      h2h: ctx.h2h,
+      restHome: ctx.restHome,
+      restAway: ctx.restAway,
       picks,
       result: result ? { ht: result.ht, ft: result.ft, htft: result.htft, label: C.LABELS[result.htft] } : null
     };
@@ -182,20 +224,37 @@ for (const r of results) {
 }
 
 /* ---------- 历史命中率回测（631 场，无赔率，仅统计命中） ---------- */
-const btIds = ['poisson', 'home', 'draw', 'elo'];
+const btIds = ['poisson', 'form', 'h2h', 'home', 'defense', 'comeback', 'elo'];
 const backtest = {};
-for (const id of btIds) backtest[id] = { id, name: E.LIST.find((x) => x.id === id).name, n: 0, hits: 0, picks: [] };
+for (const id of btIds) {
+  const def = E.LIST.find((x) => x.id === id);
+  backtest[id] = { id, name: def.name, n: 0, hits: 0, picks: [] };
+}
 
-for (let i = 40; i < sorted.length; i++) {
+const btStart = Math.max(40, sorted.length - 1000);
+for (let i = btStart; i < sorted.length; i++) {
   const m = sorted[i];
   if (!m.ft) continue;
+  const hist = sorted.slice(0, i);
   const prior = priorFor(m.league);
-  const ratesH = C.teamRates(sorted.slice(0, i), m.home, prior);
-  const ratesA = C.teamRates(sorted.slice(0, i), m.away, prior);
-  const lam = C.estimateLambda({ home: ratesH.home, away: ratesA.away }, prior);
+  const formHome = C.teamForm(hist, m.home, m.date, 10);
+  const formAway = C.teamForm(hist, m.away, m.date, 10);
+  const h2h = C.h2h(hist, m.home, m.away, m.date);
+  const restHome = C.restDays(hist, m.home, m.date);
+  const restAway = C.restDays(hist, m.away, m.date);
+  const halfHome = C.halfRates(hist, m.home, m.date, 15);
+  const halfAway = C.halfRates(hist, m.away, m.date, 15);
+  const ratesH = C.teamRates(hist, m.home, prior);
+  const ratesA = C.teamRates(hist, m.away, prior);
+  const baseLam = C.estimateLambda({ home: ratesH.home, away: ratesA.away }, prior);
+  const lam = C.adjustLambda(baseLam, { formHome, formAway, h2h, restHome, restAway, rankDiff: null, leagueAvg: prior });
   const model = C.htftProbs(lam.home, lam.away);
   const e = eloBefore[keyOf(m)] || { home: 1500, away: 1500 };
-  const c = { model, eloDiff: e.home - e.away };
+  const c = {
+    model, implied: model, odds: {}, lambda: lam,
+    eloDiff: e.home - e.away, eloHome: e.home, eloAway: e.away,
+    formHome, formAway, h2h, restHome, restAway, halfHome, halfAway, rankDiff: null
+  };
   for (const id of btIds) {
     const expert = E.LIST.find((x) => x.id === id);
     const r = expert.pick(c);
@@ -207,6 +266,7 @@ for (let i = 40; i < sorted.length; i++) {
     }
   }
 }
+
 const modalKey = Object.keys(htftDist).sort((a, b) => htftDist[b] - htftDist[a])[0];
 const modalShare = htftDist[modalKey] / results.length;
 const btSummary = Object.values(backtest).map((b) => {

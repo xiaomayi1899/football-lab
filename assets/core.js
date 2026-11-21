@@ -140,7 +140,7 @@
       if (m.home === team) { home.n++; home.gf += m.ft[0]; home.ga += m.ft[1]; }
       if (m.away === team) { away.n++; away.gf += m.ft[1]; away.ga += m.ft[0]; }
     }
-    var k = 4; /* 收缩强度：样本少时靠近先验 */
+    var k = 8; /* 收缩强度：样本少时靠近先验 */
     return {
       home: {
         gf: (home.gf + prior.home * k) / (home.n + k),
@@ -184,6 +184,119 @@
   C.rankOf = function (p) {
     var keys = Object.keys(p).sort(function (a, b) { return p[b] - p[a]; });
     return { first: keys[0], second: keys[1], p: p };
+  };
+
+  /* ================= 球队画像 ================= */
+
+  /* 近 n 场战绩（只看 beforeDate 之前），主客场分开统计 */
+  C.teamForm = function (matches, team, beforeDate, n) {
+    var recent = [];
+    for (var i = matches.length - 1; i >= 0 && recent.length < (n || 10); i--) {
+      var m = matches[i];
+      if (!m.ft || m.date >= beforeDate) continue;
+      if (m.home === team) recent.push({ gf: m.ft[0], ga: m.ft[1], home: true, opp: m.away, date: m.date });
+      else if (m.away === team) recent.push({ gf: m.ft[1], ga: m.ft[0], home: false, opp: m.home, date: m.date });
+    }
+    var w = 0, d = 0, l = 0, gf = 0, ga = 0;
+    var hw = 0, hd = 0, hl = 0, aw = 0, ad = 0, al = 0;
+    for (var j = 0; j < recent.length; j++) {
+      var r = recent[j];
+      gf += r.gf; ga += r.ga;
+      if (r.gf > r.ga) { w++; if (r.home) hw++; else aw++; }
+      else if (r.gf === r.ga) { d++; if (r.home) hd++; else ad++; }
+      else { l++; if (r.home) hl++; else al++; }
+    }
+    var n2 = recent.length;
+    return {
+      n: n2, w: w, d: d, l: l, gf: gf, ga: ga,
+      avgGF: n2 ? gf / n2 : 0,
+      avgGA: n2 ? ga / n2 : 0,
+      pts: n2 ? (w * 3 + d) / n2 : 0,
+      home: { w: hw, d: hd, l: hl },
+      away: { w: aw, d: ad, l: al },
+      recent: recent.slice(0, 5)
+    };
+  };
+
+  /* 交锋历史（含主客互换） */
+  C.h2h = function (matches, home, away, beforeDate) {
+    var hw = 0, d = 0, aw = 0, n = 0;
+    for (var i = matches.length - 1; i >= 0; i--) {
+      var m = matches[i];
+      if (!m.ft) continue;
+      if (m.date >= beforeDate) continue;
+      var hg, ag;
+      if (m.home === home && m.away === away) { hg = m.ft[0]; ag = m.ft[1]; }
+      else if (m.home === away && m.away === home) { hg = m.ft[1]; ag = m.ft[0]; }
+      else continue;
+      n++;
+      if (hg > ag) hw++; else if (hg === ag) d++; else aw++;
+      if (n >= 8) break;
+    }
+    return { n: n, hw: hw, d: d, aw: aw };
+  };
+
+  /* 休息天数 */
+  C.restDays = function (matches, team, dateStr) {
+    for (var i = matches.length - 1; i >= 0; i--) {
+      var m = matches[i];
+      if (m.date >= dateStr) continue;
+      if (m.home === team || m.away === team) {
+        return Math.round((new Date(dateStr) - new Date(m.date)) / 86400000);
+      }
+    }
+    return null;
+  };
+
+  /* 半场专项：上半场进球/失球率 */
+  C.halfRates = function (matches, team, beforeDate, n) {
+    var htGF = 0, htGA = 0, cnt = 0;
+    for (var i = matches.length - 1; i >= 0 && cnt < (n || 15); i--) {
+      var m = matches[i];
+      if (!m.ft || !m.ht || m.date >= beforeDate) continue;
+      if (m.home === team) { htGF += m.ht[0]; htGA += m.ht[1]; cnt++; }
+      else if (m.away === team) { htGF += m.ht[1]; htGA += m.ht[0]; cnt++; }
+    }
+    return { n: cnt, gf: cnt ? htGF / cnt : 0, ga: cnt ? htGA / cnt : 0 };
+  };
+
+  /* 用近期状态、交锋、排名、休息调整基础 λ（收紧幅度，避免连乘爆炸） */
+  C.adjustLambda = function (base, ctx) {
+    function clamp(lo, hi, v) { return Math.max(lo, Math.min(hi, v)); }
+    var lh = base.home, la = base.away;
+    var fh = ctx.formHome, fa = ctx.formAway;
+    var avg = ctx.leagueAvg || { home: 1.4, away: 1.1 };
+    var mh = 1, ma = 1;
+
+    /* 状态：近 10 场进攻 ≈ 联赛平均时为 1，最多 ±12% */
+    if (fh && fh.n >= 3) mh *= clamp(0.9, 1.12, 0.55 + 0.45 * (fh.avgGF / Math.max(0.6, avg.home)));
+    if (fa && fa.n >= 3) ma *= clamp(0.9, 1.12, 0.55 + 0.45 * (fa.avgGF / Math.max(0.6, avg.away)));
+    /* 对手防守：对方失球多则本方 λ 略升，最多 ±10% */
+    if (fa && fa.n >= 3) mh *= clamp(0.92, 1.10, 0.7 + 0.3 * (fa.avgGA / Math.max(0.6, avg.away)));
+    if (fh && fh.n >= 3) ma *= clamp(0.92, 1.10, 0.7 + 0.3 * (fh.avgGA / Math.max(0.6, avg.home)));
+    /* 交锋：最多 ±8% */
+    if (ctx.h2h && ctx.h2h.n >= 3) {
+      var hShare = (ctx.h2h.hw + 0.5 * ctx.h2h.d) / ctx.h2h.n;
+      mh *= 1 + (hShare - 0.5) * 0.16;
+      ma *= 1 - (hShare - 0.5) * 0.16;
+    }
+    /* 排名：最多 ±8% */
+    if (ctx.rankDiff !== null && ctx.rankDiff !== undefined) {
+      var adj = clamp(-0.08, 0.08, ctx.rankDiff / 300);
+      mh *= 1 + adj;
+      ma *= 1 - adj;
+    }
+    /* 休息不足 */
+    if (ctx.restHome !== null && ctx.restHome < 3) mh *= 0.95;
+    if (ctx.restAway !== null && ctx.restAway < 3) ma *= 0.95;
+
+    /* 总乘数限制在 0.78 ~ 1.30 */
+    mh = clamp(0.78, 1.30, mh);
+    ma = clamp(0.78, 1.30, ma);
+    return {
+      home: Math.max(0.7, Math.min(2.7, lh * mh)),
+      away: Math.max(0.5, Math.min(2.6, la * ma))
+    };
   };
 
   root.FootballCore = C;
