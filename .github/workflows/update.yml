@@ -1,0 +1,39 @@
+name: Update football data
+
+on:
+  schedule:
+    - cron: '20 15 * * *'   # 北京时间 23:20
+    - cron: '20 3 * * *'    # 北京时间 11:20（补抓早场）
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-football
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Fetch official data
+        run: node scripts/fetch.mjs --days=45
+      - name: Build app data
+        run: node scripts/build.mjs
+      - name: Commit if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/
+          if git diff --cached --quiet; then
+            echo "No changes."
+          else
+            git commit -m "chore(data): update football results and odds"
+            git push
+          fi

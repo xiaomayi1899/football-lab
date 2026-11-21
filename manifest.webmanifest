@@ -1,0 +1,9 @@
+{
+  "name": "半全场实验室 · 竞彩足球",
+  "short_name": "半全场",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#07120f",
+  "theme_color": "#07120f",
+  "icons": []
+}
