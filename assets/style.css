@@ -158,3 +158,7 @@ button { font: inherit; color: inherit; border: 0; background: none; cursor: poi
 .basis-row b { color: var(--text); font-weight: 500; font-variant-numeric: tabular-nums; }
 .basis-row .vs { color: var(--dim); font-size: 9.5px; text-align: center; }
 .pick-reason { font-size: 10px; color: var(--dim); padding: 0 8px 5px 80px; margin-top: -2px; }
+.breakeven { display: flex; gap: 6px 12px; flex-wrap: wrap; margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,.06); font-size: 11px; color: var(--muted); }
+.breakeven b { font-variant-numeric: tabular-nums; }
+.breakeven.up b { color: var(--green); }
+.breakeven.down b { color: var(--red); }

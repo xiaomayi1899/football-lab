@@ -137,6 +137,8 @@
     var base = d.baselines || { random: 1 / 9, modal: 0.2678 };
     var live = (d.experts || []).slice().sort(function (a, b) { return b.roi - a.roi; });
     var bt = d.backtest || [];
+    var exById = {};
+    (d.experts || []).forEach(function (e) { exById[e.id] = e; });
 
     var liveRows = live.map(function (e) {
       return '<div class="live-row">' +
@@ -164,6 +166,18 @@
         '</div>' +
         '<div class="bar"><i style="width:' + w + '%"></i><span class="base" style="left:' + baseW + '%"></span></div>' +
         '<p class="hint" style="margin-top:6px">金色刻度 = 「总是选' + esc(b.modalKey ? LABEL[b.modalKey] : '最热项') + '」的基线 ' + pct(b.modalBaseline) + '；超额 ' + sign(edge * 100, 1) + ' 个百分点</p>' +
+        (function () {
+          var e = exById[b.id];
+          if (!e || !e.avgOdds) return '';
+          var roi = e.projectedROI;
+          return '<div class="breakeven ' + (roi >= 0 ? 'up' : 'down') + '">' +
+            '<span>平均赔率 <b>' + num(e.avgOdds) + '</b></span>' +
+            '<span>保本命中 <b>' + pct(e.breakEven) + '</b></span>' +
+            '<span>预计 ROI <b>' + sign(roi * 100, 1) + '%</b></span>' +
+            '</div>' +
+            '<p class="hint" style="margin-top:4px">命中率 ' + pct(b.hitRate) + (b.hitRate >= e.breakEven ? ' 高于' : ' 低于') +
+            '保本线 — ' + (roi >= 0 ? '按当前赔率结构可能盈利' : '命中率不够覆盖赔率，长期亏钱') + '</p>';
+        })() +
         '</div>';
     }).join('');
 
@@ -193,6 +207,8 @@
     }).join('');
 
     var bt = d.backtest || [];
+    var exById = {};
+    (d.experts || []).forEach(function (e) { exById[e.id] = e; });
     var recent = [];
     bt.forEach(function (b) {
       (b.picks || []).slice(-12).reverse().forEach(function (p) {

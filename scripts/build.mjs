@@ -282,6 +282,34 @@ const btSummary = Object.values(backtest).map((b) => {
   };
 });
 
+/* ---------- 保本命中率与预计 ROI ----------
+ * 命中率再高，如果赔率不够也会亏。
+ * 用当前在售比赛的真实赔率结构，估算每个专家的：
+ *   avgOdds      平均下注赔率
+ *   breakEven    保本所需命中率 = 1 / 平均赔率
+ *   projectedROI 用历史回测命中率 × 平均赔率 - 1 估算
+ */
+const oddsSum = {}, oddsCnt = {};
+for (const item of upcoming) {
+  for (const p of item.picks || []) {
+    if (Number.isFinite(p.odds) && p.odds > 1) {
+      oddsSum[p.id] = (oddsSum[p.id] || 0) + p.odds;
+      oddsCnt[p.id] = (oddsCnt[p.id] || 0) + 1;
+    }
+  }
+}
+const btById = {};
+for (const b of btSummary) btById[b.id] = b;
+for (const e of experts) {
+  const ao = oddsCnt[e.id] ? oddsSum[e.id] / oddsCnt[e.id] : null;
+  const h = btById[e.id] ? btById[e.id].hitRate : null;
+  e.avgOdds = ao ? +ao.toFixed(2) : null;
+  e.breakEven = ao ? +(1 / ao).toFixed(4) : null;
+  e.historyHitRate = h;
+  e.projectedROI = (ao && h !== null) ? +(h * ao - 1).toFixed(4) : null;
+  e.sampleOdds = oddsCnt[e.id] || 0;
+}
+
 const out = {
   updatedAt: new Date().toISOString(),
   meta: {

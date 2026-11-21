@@ -46,7 +46,7 @@ async function gh(path, method = 'GET', body) {
 }
 
 async function pushData() {
-  const files = ['data/app.json', 'data/results.json', 'data/odds.json'];
+  const files = ['data/app.json', 'data/results.json', 'data/odds.json', 'data/validation.json'];
   const ref = await gh(`/repos/${OWNER}/${REPO}/git/ref/heads/main`);
   const base = await gh(`/repos/${OWNER}/${REPO}/git/commits/${ref.object.sha}`);
   const tree = [];
