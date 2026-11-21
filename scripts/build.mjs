@@ -104,20 +104,30 @@ function buildContext(m) {
 
   let model = C.htftProbs(lam.home, lam.away);
 
-  /* 市场校准：用胜平负赔率反推 λ，避免纯模型把强队高估到 3 球以上。
-     只校准 35%，保留模型的独立判断。 */
+  /* ---------- 三源融合（借鉴 wlrwx/football-engine 的实证权重） ----------
+   * 市场 0.6 + DJYY 模型 0.3 + 自研模型 0.1
+   * 保留半全场内部结构，只调整「全场胜/平/负」三组的总和。
+   */
+  const mine1x2 = C.htftTo1x2(model);
+  let mkt1x2 = null;
   if (m.had && m.had.h && m.had.d && m.had.a) {
     const ph = 1 / m.had.h, pd = 1 / m.had.d, pa = 1 / m.had.a;
-    const s = ph + pd + pa;
-    const target = { h: ph / s, d: pd / s, a: pa / s };
-    const cur = { h: 0, d: 0, a: 0 };
-    for (const k of C.HAFU) cur[k[1]] += model[k];
-    const nh = Math.pow(target.h / Math.max(0.05, cur.h), 0.35);
-    const na = Math.pow(target.a / Math.max(0.05, cur.a), 0.35);
-    lam.home = Math.max(0.7, Math.min(2.6, lam.home * nh));
-    lam.away = Math.max(0.5, Math.min(2.5, lam.away * na));
-    model = C.htftProbs(lam.home, lam.away);
+    const ss = ph + pd + pa;
+    mkt1x2 = { h: ph / ss, d: pd / ss, a: pa / ss };
   }
+  const djModel1x2 = dj && dj.djyyModel
+    ? { h: dj.djyyModel.home, d: dj.djyyModel.draw, a: dj.djyyModel.away }
+    : null;
+
+  const wM = mkt1x2 ? 0.6 : 0;
+  const wD = djModel1x2 ? 0.3 : 0;
+  const wS = 1 - wM - wD;
+  const target = {
+    h: wM * (mkt1x2 ? mkt1x2.h : 0) + wD * (djModel1x2 ? djModel1x2.h : 0) + wS * mine1x2.h,
+    d: wM * (mkt1x2 ? mkt1x2.d : 0) + wD * (djModel1x2 ? djModel1x2.d : 0) + wS * mine1x2.d,
+    a: wM * (mkt1x2 ? mkt1x2.a : 0) + wD * (djModel1x2 ? djModel1x2.a : 0) + wS * mine1x2.a
+  };
+  model = C.reweightHtft(model, target);
 
   const eloNow = eloBefore[keyOf(m)] || { home: elo[m.home] || 1500, away: elo[m.away] || 1500 };
 
@@ -127,7 +137,8 @@ function buildContext(m) {
     eloHome: eloNow.home,
     eloAway: eloNow.away,
     formHome, formAway, h2h, restHome, restAway, halfHome, halfAway, rankDiff,
-    dj
+    dj,
+    fusion: { market: wM, djyy: wD, model: wS, target, mine: mine1x2 }
   };
 }
 
@@ -175,6 +186,19 @@ for (const snap of snapshots) {
       tip: detail500[m.num + '|' + m.date] ? detail500[m.num + '|' + m.date].tip : '',
       injuries: detail500[m.num + '|' + m.date] ? detail500[m.num + '|' + m.date].injuries : null,
       hasLineup: detail500[m.num + '|' + m.date] ? detail500[m.num + '|' + m.date].hasLineup : false,
+      fusion: {
+        market: ctx.fusion.market, djyy: ctx.fusion.djyy, model: ctx.fusion.model,
+        target: {
+          h: +ctx.fusion.target.h.toFixed(3),
+          d: +ctx.fusion.target.d.toFixed(3),
+          a: +ctx.fusion.target.a.toFixed(3)
+        },
+        mine: {
+          h: +ctx.fusion.mine.h.toFixed(3),
+          d: +ctx.fusion.mine.d.toFixed(3),
+          a: +ctx.fusion.mine.a.toFixed(3)
+        }
+      },
       djyy: ctx.dj ? {
         xg: ctx.dj.xg,
         weather: ctx.dj.weather,

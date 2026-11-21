@@ -61,12 +61,13 @@ for (const f of fixtures) {
   const away = f.away && f.away.name_zh;
   if (!date || !home || !away) continue;
 
-  let info = null;
+  let info = null, comp = null;
   try {
     info = await getJson(`/api/match/${f.id}/info`);
-  } catch (e) {
-    /* 伤停接口失败不影响赛程 */
-  }
+  } catch (e) { /* 伤停失败不影响赛程 */ }
+  try {
+    comp = await getJson(`/api/match/${f.id}/comparison`);
+  } catch (e) { /* 模型概率失败不影响赛程 */ }
 
   const pack = (side) => {
     const s = info && info[side];
@@ -98,7 +99,11 @@ for (const f of fixtures) {
     homeInfo: pack('home'),
     awayInfo: pack('away'),
     weather: info && info.weather ? info.weather : null,
-    referees: info && info.referees ? info.referees : null
+    referees: info && info.referees ? info.referees : null,
+    djyyModel: comp && comp.model ? {
+      home: comp.model.p_home, draw: comp.model.p_draw, away: comp.model.p_away,
+      source: comp.model.source
+    } : null
   };
 
   done++;

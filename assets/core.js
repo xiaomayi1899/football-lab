@@ -98,6 +98,31 @@
     return out;
   };
 
+  /* 保持半全场内部结构，把「全场胜/平/负」三组总和调整到目标概率 */
+  C.reweightHtft = function (probs, target) {
+    var groups = { h: ['hh', 'dh', 'ah'], d: ['hd', 'dd', 'ad'], a: ['ha', 'da', 'aa'] };
+    var out = {}, g, i;
+    for (g in groups) {
+      var sum = 0;
+      for (i = 0; i < groups[g].length; i++) sum += probs[groups[g][i]] || 0;
+      var scale = sum > 0 ? (target[g] || 0) / sum : 0;
+      for (i = 0; i < groups[g].length; i++) out[groups[g][i]] = (probs[groups[g][i]] || 0) * scale;
+    }
+    var s2 = 0;
+    for (var k in out) s2 += out[k];
+    if (s2 > 0) for (k in out) out[k] /= s2;
+    return out;
+  };
+
+  /* 汇总半全场概率 → 全场胜平负 */
+  C.htftTo1x2 = function (probs) {
+    return {
+      h: (probs.hh || 0) + (probs.dh || 0) + (probs.ah || 0),
+      d: (probs.hd || 0) + (probs.dd || 0) + (probs.ad || 0),
+      a: (probs.ha || 0) + (probs.da || 0) + (probs.aa || 0)
+    };
+  };
+
   /* 多分类 Brier 分数：Σ(p_i - y_i)² / K，越小越好 */
   C.brier = function (probs, actualKey) {
     var s = 0, K = C.HAFU.length;
