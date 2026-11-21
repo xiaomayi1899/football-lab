@@ -30,6 +30,7 @@ function readJson(p, fallback) {
 
 const results = readJson(resolve(DATA, 'results.json'), { matches: [] }).matches || [];
 const oddsFile = readJson(resolve(DATA, 'odds.json'), { snapshots: [] });
+const detail500 = readJson(resolve(DATA, 'detail-500.json'), { matches: {} }).matches || {};
 const snapshots = oddsFile.snapshots || [];
 
 const keyOf = (m) => m.num + '|' + m.date;
@@ -158,6 +159,10 @@ for (const snap of snapshots) {
       h2h: ctx.h2h,
       restHome: ctx.restHome,
       restAway: ctx.restAway,
+      bifa: detail500[m.num + '|' + m.date] ? detail500[m.num + '|' + m.date].bifa : null,
+      tip: detail500[m.num + '|' + m.date] ? detail500[m.num + '|' + m.date].tip : '',
+      injuries: detail500[m.num + '|' + m.date] ? detail500[m.num + '|' + m.date].injuries : null,
+      hasLineup: detail500[m.num + '|' + m.date] ? detail500[m.num + '|' + m.date].hasLineup : false,
       picks,
       result: result ? { ht: result.ht, ft: result.ft, htft: result.htft, label: C.LABELS[result.htft] } : null
     };

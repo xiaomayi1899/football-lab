@@ -18,6 +18,12 @@
   }
   function pct(x) { return (x * 100).toFixed(1) + '%'; }
   function num(x, d) { return (Number(x) || 0).toFixed(d === undefined ? 2 : d); }
+  function fmtVol(v) {
+    v = Number(v) || 0;
+    if (Math.abs(v) >= 1e8) return (v / 1e8).toFixed(2) + '亿';
+    if (Math.abs(v) >= 1e4) return (v / 1e4).toFixed(1) + '万';
+    return String(Math.round(v));
+  }
   function sign(x, d) { var v = Number(x) || 0; return (v >= 0 ? '+' : '') + v.toFixed(d === undefined ? 2 : d); }
 
   function render() {
@@ -73,6 +79,35 @@
     return html;
   }
 
+  function bifaBlock(m) {
+    if (!m.bifa) return '';
+    var rows = [['主胜', m.bifa.home], ['平局', m.bifa.draw], ['客胜', m.bifa.away]];
+    return '<div class="bifa">' +
+      '<div class="bifa-title">真实投注 · 必发交易</div>' +
+      rows.map(function (r) {
+        var x = r[1];
+        if (!x) return '';
+        return '<div class="bifa-row">' +
+          '<span class="bifa-name">' + r[0] + '</span>' +
+          '<span class="bifa-share">' + pct(x.share) + '</span>' +
+          '<span class="bifa-vol">' + fmtVol(x.volume) + '</span>' +
+          '<span class="bifa-pnl ' + (x.pnl >= 0 ? 'up' : 'down') + '">庄' + (x.pnl >= 0 ? '盈' : '亏') + fmtVol(Math.abs(x.pnl)) + '</span>' +
+          '<span class="bifa-hot ' + (x.hot >= 0 ? 'hot' : 'cold') + '">' + (x.hot >= 0 ? '+' : '') + x.hot + '</span>' +
+          '</div>';
+      }).join('') +
+      (m.tip ? '<div class="bifa-tip">' + esc(m.tip) + '</div>' : '') +
+      '</div>';
+  }
+
+  function injuryBlock(m) {
+    if (!m.injuries) return '';
+    var h = m.injuries.home || [], a = m.injuries.away || [];
+    if (!h.length && !a.length) {
+      return '<div class="injury-row"><span class="injury-k">伤停</span><span class="hint">赛前 1 小时才公布，官方接口此刻为空</span></div>';
+    }
+    return '<div class="injury-row"><span class="injury-k">伤停</span><span>主 ' + esc(h.join('、') || '无') + ' · 客 ' + esc(a.join('、') || '无') + '</span></div>';
+  }
+
   function matchCard(m) {
     return '<div class="match">' +
       '<div class="match-head"><span class="match-num">' + esc(m.num) + '</span>' +
@@ -84,6 +119,8 @@
       '<div class="team away"><b>' + esc(m.away) + '</b><span>' + esc(m.awayRank || '') + '</span></div>' +
       '</div>' +
       grid9(m) +
+      bifaBlock(m) +
+      injuryBlock(m) +
       '<div class="basis">' +
       '<div class="basis-row"><span>近10场</span><b>' + (m.formHome ? m.formHome.w + '胜' + m.formHome.d + '平' + m.formHome.l + '负' : '—') +
       '</b><span class="vs">主</span><b>' + (m.formAway ? m.formAway.w + '胜' + m.formAway.d + '平' + m.formAway.l + '负' : '—') + '</b><span class="vs">客</span></div>' +
