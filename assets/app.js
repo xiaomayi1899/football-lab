@@ -7,7 +7,7 @@
   var $tabbar = document.getElementById('tabbar');
   var $date = document.getElementById('data-date');
 
-  var state = { tab: 'today', data: null, error: null, league: 'all' };
+  var state = { tab: 'today', data: null, error: null, league: 'all', validation: null };
   var HAFU = C.HAFU;
   var LABEL = C.LABELS;
 
@@ -232,7 +232,20 @@
         '</div>';
     }).join('');
 
-    return '<div class="page-head"><h2>专家榜</h2><p>上半部分是真实赔率结算，下半部分是 631 场历史命中率回测</p></div>' +
+    var quality = '';
+    if (state.validation && state.validation.brier) {
+      var b = state.validation.brier;
+      var impr = (b.uniform - b.byRho[b.bestRho]) / b.uniform * 100;
+      quality = '<div class="card quality">' +
+        '<div class="card-title">概率质量 <span class="sub">Brier 分数，越小越好</span></div>' +
+        '<div class="q-row"><span>模型（rho ' + b.bestRho + '）</span><b>' + b.byRho[b.bestRho].toFixed(4) + '</b></div>' +
+        '<div class="q-row"><span>均匀 1/9 基线</span><b>' + b.uniform.toFixed(4) + '</b></div>' +
+        '<div class="q-row"><span>改善</span><b class="' + (impr > 0 ? 'up' : 'down') + '">' + impr.toFixed(1) + '%</b></div>' +
+        '<p class="hint" style="margin-top:8px">Brier 衡量「概率给得准不准」，比命中率更严格。均匀基线 0.0988 意味着完全不懂也有这个分数；模型只比它好 ' + impr.toFixed(1) + '%。</p>' +
+        '</div>';
+    }
+    return '<div class="page-head"><h2>专家榜</h2><p>真实赔率结算 + 历史回测 + 概率质量</p></div>' +
+      quality +
       '<div class="notice">真实盈亏只在「有官方赔率快照 + 已完赛」时结算。官方不保留历史赔率，所以真实样本从抓取当日起累积；回测部分没有赔率，只统计命中率。</div>' +
       '<div class="page-head" style="margin-top:16px"><h2 style="font-size:15px">真实结算</h2><p>官方赔率 + 已完赛才计入</p></div>' +
       '<div class="card live-table">' + liveRows + '<p class="hint" style="margin-top:8px">当前 0 注：今日 44 场的赛果还没出。明天起自动结算。</p></div>' +
@@ -339,6 +352,10 @@
   function boot() {
     var h = String(location.hash || '').replace(/^#/, '');
     if (['today', 'experts', 'review', 'data'].indexOf(h) !== -1) state.tab = h;
+    fetch('data/validation.json', { cache: 'no-store' })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (j) { if (j) { state.validation = j; if (state.data) render(); } })
+      .catch(function () {});
     fetch('data/app.json', { cache: 'no-store' })
       .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
       .then(function (d) {

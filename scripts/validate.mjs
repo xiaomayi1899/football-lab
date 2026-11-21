@@ -92,7 +92,7 @@ for (let i = start; i < sorted.length; i++) {
   };
   const picks = {};
   for (const ex of experts) picks[ex.id] = ex.pick(ctx).key;
-  rows.push({ date: m.date, htft: m.htft, picks });
+  rows.push({ date: m.date, htft: m.htft, picks, lh: lam.home, la: lam.away });
   if (rows.length % 400 === 0) console.log(`  已处理 ${rows.length} 场…`);
 }
 
@@ -117,6 +117,22 @@ function modalRate(sub) {
   return sub.length ? h / sub.length : 0;
 }
 
+/* ---------- Dixon-Coles rho 选参（用 Brier 分数） ---------- */
+const RHOS = [0, -0.05, -0.1, -0.15, -0.2];
+const brierByRho = {};
+for (const rho of RHOS) {
+  let sum = 0;
+  for (const r of rows) {
+    sum += C.brier(C.htftProbs(r.lh, r.la, 0.45, rho), r.htft);
+  }
+  brierByRho[rho] = +(sum / rows.length).toFixed(5);
+}
+const bestRho = RHOS.slice().sort((a, b) => brierByRho[a] - brierByRho[b])[0];
+const uniformBrier = C.brier(
+  C.HAFU.reduce((acc, k) => { acc[k] = 1 / C.HAFU.length; return acc; }, {}),
+  rows[0].htft
+);
+
 const out = {
   generatedAt: new Date().toISOString(),
   n,
@@ -125,11 +141,16 @@ const out = {
   modalLabel: C.LABELS[modalKey],
   modalRate: +modalRate(rows).toFixed(4),
   elapsedMs: Date.now() - t0,
+  brier: { byRho: brierByRho, bestRho, uniform: +uniformBrier.toFixed(5) },
   experts: []
 };
 
 console.log(`\n验证 ${n} 场（${rows[0].date} ~ ${rows[n - 1].date}），耗时 ${out.elapsedMs}ms`);
 console.log(`固定基线：总是选「${C.LABELS[modalKey]}」= ${(out.modalRate * 100).toFixed(1)}%\n`);
+console.log('Dixon-Coles rho 选参（多分类 Brier，越小越好）：');
+for (const rho of RHOS) console.log(`  rho=${String(rho).padEnd(6)} Brier ${brierByRho[rho].toFixed(4)}${rho === bestRho ? '  ← 最优' : ''}`);
+console.log(`  均匀分布基线 Brier ${uniformBrier.toFixed(4)}
+`);
 console.log('专家          命中率    95% CI            超额     前半段    后半段    结论');
 
 for (const ex of experts) {

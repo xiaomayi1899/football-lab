@@ -52,29 +52,40 @@
   C.poisson = poi;
 
   /*
-   * 用两队全场期望进球 λh / λa，拆成上半场 45% + 下半场 55%，
-   * 枚举半场与下半场比分后合并，得到 9 种半全场概率。
-   * 这样半场与全场不独立，符合真实比赛的强相关。
+   * Dixon-Coles 修正：低比分（0-0 / 1-0 / 0-1 / 1-1）的概率并不独立，
+   * 用 tau 函数微调，rho 通常取 -0.2 ~ -0.05。
+   * 半场与下半场各自做一次修正，再卷积成全场。
    */
-  C.htftProbs = function (lh, la, share) {
+  function tau(i, j, l1, l2, rho) {
+    if (!rho) return 1;
+    if (i === 0 && j === 0) return 1 - l1 * l2 * rho;
+    if (i === 0 && j === 1) return 1 + l1 * rho;
+    if (i === 1 && j === 0) return 1 + l2 * rho;
+    if (i === 1 && j === 1) return 1 - rho;
+    return 1;
+  }
+  C.tau = tau;
+
+  C.htftProbs = function (lh, la, share, rho) {
     var H = share === undefined ? 0.45 : share;
+    var R = rho === undefined ? -0.1 : rho;
     var MAX = 6;
     var out = { hh: 0, hd: 0, ha: 0, dh: 0, dd: 0, da: 0, ah: 0, ad: 0, aa: 0 };
     var h1 = lh * H, a1 = la * H, h2 = lh * (1 - H), a2 = la * (1 - H);
-    var ph = [], pa = [], ph2 = [], pa2 = [];
+    var p1m = [], p2m = [], p3m = [], p4m = [];
     for (var i = 0; i <= MAX; i++) {
-      ph[i] = poi(h1, i); pa[i] = poi(a1, i);
-      ph2[i] = poi(h2, i); pa2[i] = poi(a2, i);
+      p1m[i] = poi(h1, i); p2m[i] = poi(a1, i);
+      p3m[i] = poi(h2, i); p4m[i] = poi(a2, i);
     }
     for (var i1 = 0; i1 <= MAX; i1++) {
       for (var j1 = 0; j1 <= MAX; j1++) {
-        var p1 = ph[i1] * pa[j1];
-        if (p1 < 1e-9) continue;
+        var p1 = p1m[i1] * p2m[j1] * tau(i1, j1, h1, a1, R);
+        if (p1 < 1e-10) continue;
         var ht = i1 > j1 ? 'h' : i1 < j1 ? 'a' : 'd';
         for (var i2 = 0; i2 <= MAX; i2++) {
           for (var j2 = 0; j2 <= MAX; j2++) {
-            var p2 = ph2[i2] * pa2[j2];
-            if (p2 < 1e-9) continue;
+            var p2 = p3m[i2] * p4m[j2] * tau(i2, j2, h2, a2, R);
+            if (p2 < 1e-10) continue;
             var fh = (i1 + i2) > (j1 + j2) ? 'h' : (i1 + i2) < (j1 + j2) ? 'a' : 'd';
             out[ht + fh] += p1 * p2;
           }
@@ -83,8 +94,20 @@
     }
     var sum = 0;
     for (var k in out) sum += out[k];
-    if (sum > 0) for (k in out) out[k] /= sum;
+    if (sum > 0) for (k in out) out[k] = Math.max(0, out[k] / sum);
     return out;
+  };
+
+  /* 多分类 Brier 分数：Σ(p_i - y_i)² / K，越小越好 */
+  C.brier = function (probs, actualKey) {
+    var s = 0, K = C.HAFU.length;
+    for (var i = 0; i < K; i++) {
+      var k = C.HAFU[i];
+      var y = k === actualKey ? 1 : 0;
+      var p = probs[k] || 0;
+      s += (p - y) * (p - y);
+    }
+    return s / K;
   };
 
   /* 凯利比例（半凯利）：p 为模型概率，o 为赔率 */
