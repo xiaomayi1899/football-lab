@@ -31,6 +31,7 @@ function readJson(p, fallback) {
 const results = readJson(resolve(DATA, 'results.json'), { matches: [] }).matches || [];
 const oddsFile = readJson(resolve(DATA, 'odds.json'), { snapshots: [] });
 const detail500 = readJson(resolve(DATA, 'detail-500.json'), { matches: {} }).matches || {};
+const djyy = readJson(resolve(DATA, 'djyy.json'), { matches: {} }).matches || {};
 const snapshots = oddsFile.snapshots || [];
 
 const keyOf = (m) => m.num + '|' + m.date;
@@ -91,6 +92,16 @@ function buildContext(m) {
   const lam = C.adjustLambda(baseLam, {
     formHome, formAway, h2h, restHome, restAway, rankDiff, leagueAvg: prior
   });
+  /* DJYY 真实伤停：缺阵人数越多，进攻越弱（每个 -2%，最多 -15%） */
+  const djKey = m.date + '|' + m.home + '|' + m.away;
+  const dj = djyy[djKey] || null;
+  if (dj) {
+    const hOut = (dj.homeInfo && dj.homeInfo.sidelined ? dj.homeInfo.sidelined.length : 0);
+    const aOut = (dj.awayInfo && dj.awayInfo.sidelined ? dj.awayInfo.sidelined.length : 0);
+    lam.home *= Math.max(0.85, 1 - hOut * 0.02);
+    lam.away *= Math.max(0.85, 1 - aOut * 0.02);
+  }
+
   let model = C.htftProbs(lam.home, lam.away);
 
   /* 市场校准：用胜平负赔率反推 λ，避免纯模型把强队高估到 3 球以上。
@@ -115,7 +126,8 @@ function buildContext(m) {
     eloDiff: eloNow.home - eloNow.away,
     eloHome: eloNow.home,
     eloAway: eloNow.away,
-    formHome, formAway, h2h, restHome, restAway, halfHome, halfAway, rankDiff
+    formHome, formAway, h2h, restHome, restAway, halfHome, halfAway, rankDiff,
+    dj
   };
 }
 
@@ -163,6 +175,12 @@ for (const snap of snapshots) {
       tip: detail500[m.num + '|' + m.date] ? detail500[m.num + '|' + m.date].tip : '',
       injuries: detail500[m.num + '|' + m.date] ? detail500[m.num + '|' + m.date].injuries : null,
       hasLineup: detail500[m.num + '|' + m.date] ? detail500[m.num + '|' + m.date].hasLineup : false,
+      djyy: ctx.dj ? {
+        xg: ctx.dj.xg,
+        weather: ctx.dj.weather,
+        homeOut: ctx.dj.homeInfo ? ctx.dj.homeInfo.sidelined : [],
+        awayOut: ctx.dj.awayInfo ? ctx.dj.awayInfo.sidelined : []
+      } : null,
       picks,
       result: result ? { ht: result.ht, ft: result.ft, htft: result.htft, label: C.LABELS[result.htft] } : null
     };

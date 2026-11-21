@@ -100,10 +100,24 @@
   }
 
   function injuryBlock(m) {
+    var dj = m.djyy;
+    if (dj && ((dj.homeOut && dj.homeOut.length) || (dj.awayOut && dj.awayOut.length))) {
+      var row = function (label, list) {
+        if (!list || !list.length) return '<div class="inj-row"><span class="inj-k">' + label + '</span><span class="inj-none">无缺阵</span></div>';
+        return '<div class="inj-row"><span class="inj-k">' + label + '</span><span class="inj-list">' +
+          list.slice(0, 6).map(function (p) {
+            return '<span class="inj-chip">' + esc(p.player) + '<i>' + esc(p.reason || '') + (p.missed ? ' · 缺' + p.missed + '场' : '') + '</i></span>';
+          }).join('') + '</span></div>';
+      };
+      return '<div class="inj-block">' +
+        '<div class="inj-title">真实伤停 · DJYY' + (dj.xg ? ' · xG ' + num(dj.xg.home) + '-' + num(dj.xg.away) : '') + '</div>' +
+        row('主队', dj.homeOut) + row('客队', dj.awayOut) +
+        '</div>';
+    }
     if (!m.injuries) return '';
     var h = m.injuries.home || [], a = m.injuries.away || [];
     if (!h.length && !a.length) {
-      return '<div class="injury-row"><span class="injury-k">伤停</span><span class="hint">赛前 1 小时才公布，官方接口此刻为空</span></div>';
+      return '<div class="injury-row"><span class="injury-k">伤停</span><span class="hint">该场未匹配到伤停数据</span></div>';
     }
     return '<div class="injury-row"><span class="injury-k">伤停</span><span>主 ' + esc(h.join('、') || '无') + ' · 客 ' + esc(a.join('、') || '无') + '</span></div>';
   }
